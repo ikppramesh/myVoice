@@ -1,0 +1,4 @@
+chatterbox-tts==0.1.7
+gradio==6.8.0
+pydub
+setuptools<81  # resemble-perth (watermarker) still imports pkg_resources

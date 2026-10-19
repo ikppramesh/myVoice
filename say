@@ -1,0 +1,4 @@
+#!/bin/zsh
+# CLI wrapper: ./say --voice Ramesh "Hello"
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+exec "$(dirname "$0")/.venv/bin/python" "$(dirname "$0")/say.py" "$@"
