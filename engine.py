@@ -30,6 +30,28 @@ DEVICE = os.environ.get("MYVOICE_DEVICE") or ("cuda" if torch.cuda.is_available(
 MAX_REFERENCE_SECONDS = 30
 MAX_CHUNK_CHARS = 280
 
+# Indian languages are generated with IndicF5 (AI4Bharat), installed in its own venv.
+INDIC_PYTHON = ROOT / ".venv-indic" / "bin" / "python"
+INDIC_LANGS = {
+    "te": "Telugu", "hi": "Hindi", "ta": "Tamil", "kn": "Kannada", "ml": "Malayalam", "mr": "Marathi",
+    "bn": "Bengali", "gu": "Gujarati", "pa": "Punjabi", "or": "Odia", "as": "Assamese",
+}
+INDIC_MAX_REF_SECONDS = 14  # IndicF5 only uses ~15 s of reference; the transcript must match it exactly
+# One sentence per language to read aloud; the text doubles as the reference transcript.
+INDIC_SCRIPTS = {
+    "te": "నమస్కారం! ఈ రోజు మనం ఒక ఆసక్తికరమైన విషయం గురించి మాట్లాడుకుందాం. మీరు చివరి వరకు వినండి.",
+    "hi": "नमस्ते! आज हम एक बहुत ही दिलचस्प विषय के बारे में बात करेंगे। आप अंत तक ज़रूर सुनिए।",
+    "ta": "வணக்கம்! இன்று நாம் ஒரு சுவாரஸ்யமான விஷயத்தைப் பற்றிப் பேசப் போகிறோம். கடைசி வரை கேளுங்கள்.",
+    "kn": "ನಮಸ್ಕಾರ! ಇಂದು ನಾವು ಒಂದು ಆಸಕ್ತಿದಾಯಕ ವಿಷಯದ ಬಗ್ಗೆ ಮಾತನಾಡೋಣ. ಕೊನೆಯವರೆಗೂ ಕೇಳಿ.",
+    "ml": "നമസ്കാരം! ഇന്ന് നമ്മൾ ഒരു രസകരമായ വിഷയത്തെക്കുറിച്ച് സംസാരിക്കാം. അവസാനം വരെ കേൾക്കൂ.",
+    "mr": "नमस्कार! आज आपण एका मनोरंजक विषयावर बोलूया. शेवटपर्यंत नक्की ऐका.",
+    "bn": "নমস্কার! আজ আমরা একটি মজার বিষয় নিয়ে কথা বলব। শেষ পর্যন্ত শুনুন।",
+    "gu": "નમસ્તે! આજે આપણે એક રસપ્રદ વિષય વિશે વાત કરીશું. અંત સુધી જરૂર સાંભળજો.",
+    "pa": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਅੱਜ ਅਸੀਂ ਇੱਕ ਦਿਲਚਸਪ ਵਿਸ਼ੇ ਬਾਰੇ ਗੱਲ ਕਰਾਂਗੇ। ਅੰਤ ਤੱਕ ਜ਼ਰੂਰ ਸੁਣੋ।",
+    "or": "ନମସ୍କାର! ଆଜି ଆମେ ଗୋଟିଏ ମଜାଦାର ବିଷୟରେ କଥା ହେବା। ଶେଷ ପର୍ଯ୍ୟନ୍ତ ଶୁଣନ୍ତୁ।",
+    "as": "নমস্কাৰ! আজি আমি এটা আমোদজনক বিষয়ৰ বিষয়ে কথা পাতিম। শেষলৈকে শুনিব।",
+}
+
 _models = {}
 
 
@@ -118,6 +140,43 @@ def delete_voice(name):
     shutil.rmtree(voice_dir(name))
 
 
+def save_indic_reference(name, lang, audio_path, transcript):
+    """Store a short clip of the voice speaking an Indian language, plus exactly what was said."""
+    if lang not in INDIC_LANGS:
+        raise ValueError(f"Unsupported Indian language: {lang}")
+    if not transcript or not transcript.strip():
+        raise ValueError("Type exactly what was said in the recording")
+    idir = voice_dir(name) / "indic"
+    idir.mkdir(exist_ok=True)
+    tmp = idir / f"_{lang}_full.wav"
+    clean_sample(Path(audio_path), tmp)
+    seconds = torchaudio.info(str(tmp)).num_frames / 24000
+    if seconds > INDIC_MAX_REF_SECONDS:
+        tmp.unlink()
+        raise ValueError(f"Recording is {seconds:.0f}s; keep it under {INDIC_MAX_REF_SECONDS}s "
+                         "(read just the one sentence) so it matches the transcript")
+    tmp.rename(idir / f"{lang}.wav")
+    (idir / f"{lang}.txt").write_text(transcript.strip())
+    return idir / f"{lang}.wav"
+
+
+def indic_references(name):
+    idir = VOICES_DIR / slugify(name) / "indic"
+    return sorted(p.stem for p in idir.glob("*.wav")) if idir.exists() else []
+
+
+def _indic_reference(vdir, lang):
+    """Best reference for an Indian language: same language > any Indian language > main clip (auto-transcribed)."""
+    idir = vdir / "indic"
+    for cand in [idir / f"{lang}.wav", *sorted(idir.glob("*.wav"))] if idir.exists() else []:
+        if cand.exists():
+            return cand, cand.with_suffix(".txt").read_text()
+    clip = vdir / "reference_short.wav"
+    if not clip.exists() or clip.stat().st_mtime < (vdir / "reference.wav").stat().st_mtime:
+        _run_ffmpeg(["-i", str(vdir / "reference.wav"), "-t", "12", str(clip)])
+    return clip, ""  # empty transcript -> IndicF5 transcribes it with Whisper
+
+
 # ---------------------------------------------------------------- models
 
 def get_model(language="en"):
@@ -203,39 +262,81 @@ def _prepare(model, vdir, exaggeration):
         model.conds.save(cache)
 
 
+def _speak_chatterbox(chunks, vdir, lang, exaggeration, cfg_weight, temperature, seed, tick):
+    model = get_model(lang)
+    _prepare(model, vdir, exaggeration)
+    pieces = []
+    for text, pause in chunks:
+        tick()
+        if seed is not None:
+            torch.manual_seed(seed + len(pieces))
+        kwargs = dict(exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
+        if lang != "en":
+            kwargs["language_id"] = lang
+        pieces += [model.generate(text, **kwargs).cpu(), torch.zeros(1, int(pause * model.sr))]
+    return pieces, model.sr
+
+
+def _speak_indic(chunks, vdir, lang, tick):
+    if not INDIC_PYTHON.exists():
+        raise RuntimeError("Indian-language engine not installed (.venv-indic missing). See README.")
+    ref_audio, ref_text = _indic_reference(vdir, lang)
+    work = OUTPUT_DIR / f"_indic_{os.getpid()}_{time.time_ns()}"
+    job = {"ref_audio": str(ref_audio), "ref_text": ref_text, "chunks": chunks, "out": f"{work}.wav"}
+    Path(f"{work}.json").write_text(json.dumps(job, ensure_ascii=False))
+    proc = subprocess.Popen([str(INDIC_PYTHON), str(ROOT / "indic_worker.py"), f"{work}.json"],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    for line in proc.stdout:
+        if line.startswith("PROGRESS") and int(line.split()[1]) < len(chunks):
+            tick()
+    err = proc.stderr.read()
+    Path(f"{work}.json").unlink(missing_ok=True)
+    if proc.wait() != 0:
+        if "gated repo" in err or "restricted" in err:
+            raise RuntimeError("IndicF5 access not granted yet: accept the terms at "
+                               "https://huggingface.co/ai4bharat/IndicF5 (logged in as your HF account)")
+        raise RuntimeError("IndicF5 failed:\n" + err[-2000:])
+    wav, sr = torchaudio.load(f"{work}.wav")
+    Path(f"{work}.wav").unlink()
+    return [wav, torch.zeros(1, int(chunks[-1][1] * sr))], sr
+
+
 def speak(text, voice, language=None, exaggeration=0.5, cfg_weight=0.5,
           temperature=0.8, seed=42, out_name=None, progress=None):
-    """Generate speech for any length of text. Returns (wav_path, mp3_path)."""
+    """Generate speech for any length of text. Returns (wav_path, mp3_path).
+
+    English and the Chatterbox multilingual languages use Chatterbox; Indian
+    languages (INDIC_LANGS) use IndicF5.
+    """
     segments = parse_script(text, voice)
     if not segments:
         raise ValueError("No text to speak")
 
-    pieces, sr = [], None
-    jobs = [(v, chunk, pause) for v, block in segments for chunk, pause in split_text(block)]
-    current = None
-    for i, (v, chunk, pause) in enumerate(jobs):
+    plan = [(v, list(split_text(block))) for v, block in segments]
+    total, done = sum(len(c) for _, c in plan), [0]
+
+    def tick():
+        if progress:
+            progress(done[0] / total, f"Chunk {done[0] + 1}/{total}")
+        done[0] += 1
+
+    pieces, out_sr = [], 24000
+    for v, chunks in plan:
         vdir = voice_dir(v)
         lang = language or json.loads((vdir / "voice.json").read_text()).get("language", "en")
-        model = get_model(lang)
-        if current != (v, lang):
-            _prepare(model, vdir, exaggeration)
-            current = (v, lang)
-        if progress:
-            progress(i / len(jobs), f"Chunk {i + 1}/{len(jobs)} ({v})")
-        if seed is not None:
-            torch.manual_seed(seed + i)
-        kwargs = dict(exaggeration=exaggeration, cfg_weight=cfg_weight, temperature=temperature)
-        if lang != "en":
-            kwargs["language_id"] = lang
-        wav = model.generate(chunk, **kwargs).cpu()
-        sr = model.sr
-        pieces += [wav, torch.zeros(1, int(pause * sr))]
+        if lang in INDIC_LANGS:
+            seg, sr = _speak_indic(chunks, vdir, lang, tick)
+        else:
+            seg, sr = _speak_chatterbox(chunks, vdir, lang, exaggeration, cfg_weight, temperature, seed, tick)
+        if sr != out_sr:
+            seg = [torchaudio.functional.resample(p, sr, out_sr) for p in seg]
+        pieces += seg
 
     audio = torch.cat(pieces[:-1], dim=1)
     stem = out_name or f"{slugify(voice)}_{time.strftime('%Y%m%d_%H%M%S')}"
     wav_path = OUTPUT_DIR / f"{stem}.wav"
     mp3_path = OUTPUT_DIR / f"{stem}.mp3"
-    torchaudio.save(str(wav_path), audio, sr)
+    torchaudio.save(str(wav_path), audio, out_sr)
     _run_ffmpeg(["-i", str(wav_path), "-codec:a", "libmp3lame", "-b:a", "192k", str(mp3_path)])
     if progress:
         progress(1.0, "Done")

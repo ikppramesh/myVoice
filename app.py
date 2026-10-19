@@ -18,8 +18,10 @@ READING_SCRIPT = """**Read these aloud in your natural speaking voice** (add eac
 **Tips:** quiet room, mic 15–20 cm from your mouth, no music or echo. 30 seconds to 2 minutes total is plenty —
 clean audio matters far more than length. Speak with the energy you want the clone to have."""
 
-LANGS = {"en": "English"} | {k: v for k, v in sorted(engine.supported_languages().items()) if k != "en"}
-LANG_CHOICES = [(f"{v} ({k})", k) for k, v in LANGS.items()]
+LANGS = ({"en": "English"} | dict(engine.INDIC_LANGS)
+         | {k: v for k, v in sorted(engine.supported_languages().items()) if k not in ("en", *engine.INDIC_LANGS)})
+LANG_CHOICES = [(f"{v} ({k})" + (" · Indian" if k in engine.INDIC_LANGS else ""), k) for k, v in LANGS.items()]
+INDIC_CHOICES = [(f"{v} ({k})", k) for k, v in engine.INDIC_LANGS.items()]
 
 
 def voice_names():
@@ -77,11 +79,49 @@ def save(name, language, description, labels_df, consent, samples):
             sample_summary([]), gr.update(choices=names, value=vdir.name), voices_table())
 
 
+PREVIEW_TEXT = {
+    "te": "నమస్కారం, ఇది నా స్వంత గొంతు. ఇది పూర్తిగా నా కంప్యూటర్‌లోనే తయారైంది.",
+    "hi": "नमस्ते, यह मेरी अपनी आवाज़ है। यह पूरी तरह मेरे कंप्यूटर पर बनाई गई है।",
+}
+
+
 def preview(name, language):
     vid = engine.slugify(name or "")
-    text = f"Hi, this is {name}. This is a preview of my cloned voice, generated entirely on my own computer."
+    text = PREVIEW_TEXT.get(language) or (
+        f"Hi, this is {name}. This is a preview of my cloned voice, generated entirely on my own computer.")
     wav, _ = engine.speak(text, vid, language=language, out_name=f"{vid}_preview")
     return str(wav)
+
+
+def indic_status(name):
+    try:
+        have = engine.indic_references(name)
+    except ValueError:
+        have = []
+    if not have:
+        return ("_No Indian-language samples yet. Without one, your main recording is used "
+                "(works, but with an English accent)._")
+    return "**Saved Indian-language samples:** " + ", ".join(engine.INDIC_LANGS[l] for l in have)
+
+
+def indic_script(lang):
+    text = engine.INDIC_SCRIPTS.get(lang, "")
+    return f"### Read this aloud (one sentence, under {engine.INDIC_MAX_REF_SECONDS} s):\n\n## {text}", text
+
+
+def save_indic(name, lang, audio, transcript):
+    if not audio:
+        raise gr.Error("Record or upload the sentence first.")
+    try:
+        engine.voice_dir(name)
+    except ValueError:
+        raise gr.Error("Save the voice in Step 3 first, then add Indian-language samples.")
+    try:
+        engine.save_indic_reference(name, lang, audio, transcript)
+    except ValueError as e:
+        raise gr.Error(str(e))
+    gr.Info(f"{engine.INDIC_LANGS[lang]} sample saved for '{name}'.")
+    return None, indic_status(name)
 
 
 # ------------------------------------------------------------ speak tab
@@ -142,6 +182,19 @@ with gr.Blocks(title="myVoice") as demo:
             preview_audio = gr.Audio(label="Preview (cloned)", interactive=False)
         save_info = gr.Markdown()
 
+        gr.Markdown("### Step 4 — Indian languages (Telugu, Hindi, Tamil…)\n"
+                    "For a natural accent, record yourself reading **one short sentence in each language** you "
+                    "want. Uses IndicF5 (AI4Bharat). If you upload instead, type exactly what you said.")
+        with gr.Row():
+            with gr.Column(scale=3):
+                indic_lang = gr.Dropdown(INDIC_CHOICES, value="te", label="Language")
+                indic_text_md = gr.Markdown(indic_script("te")[0])
+                indic_transcript = gr.Textbox(value=indic_script("te")[1], label="Transcript (exactly what you said)")
+            with gr.Column(scale=2):
+                indic_audio = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Record sentence")
+                indic_btn = gr.Button("💾 Save language sample", variant="primary")
+                indic_info = gr.Markdown(indic_status("Ramesh"))
+
     with gr.Tab("2 · Speak / Podcast"):
         with gr.Row():
             with gr.Column(scale=3):
@@ -152,7 +205,9 @@ with gr.Blocks(title="myVoice") as demo:
             with gr.Column(scale=2):
                 voice = gr.Dropdown(voice_names(), value=(voice_names() or [None])[0], label="Voice")
                 lang_override = gr.Dropdown([("Use voice's language", "")] + LANG_CHOICES, value="",
-                                            label="Language")
+                                            label="Language",
+                                            info="Indian languages use IndicF5; the sliders below apply to "
+                                                 "the other languages only")
                 exaggeration = gr.Slider(0.25, 2.0, 0.5, step=0.05, label="Expressiveness",
                                          info="Higher = more emotion/energy (try 0.7 for lively podcasts)")
                 cfg = gr.Slider(0.0, 1.0, 0.5, step=0.05, label="Pace / guidance",
@@ -176,6 +231,9 @@ with gr.Blocks(title="myVoice") as demo:
     save_btn.click(save, [name, language, description, labels, consent, samples],
                    [ref_audio, save_info, samples, sample_list, voice, table])
     preview_btn.click(preview, [name, language], preview_audio)
+    indic_lang.change(indic_script, indic_lang, [indic_text_md, indic_transcript])
+    indic_btn.click(save_indic, [name, indic_lang, indic_audio, indic_transcript], [indic_audio, indic_info])
+    name.change(indic_status, name, indic_info)
     go.click(generate, [text, voice, lang_override, exaggeration, cfg, temp, seed], [out_audio, out_files])
     del_btn.click(remove, del_voice, [del_voice, table]).then(
         lambda: gr.update(choices=voice_names()), None, voice)
