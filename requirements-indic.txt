@@ -6,3 +6,4 @@ setuptools<81
 transformers<5     # IndicF5 remote model code predates transformers 5
 pyarrow<18         # IndicF5 pins numpy<=1.26.4; newer pyarrow needs NumPy 2
 datasets<3         # compatible with pyarrow<18
+IndicTransToolkit  # pre/post-processing for IndicTrans2 translation

@@ -42,6 +42,16 @@ CLI: `./say --voice Ramesh --indic-sample te my_telugu.m4a`
 
 Expressiveness / pace sliders apply to Chatterbox languages only.
 
+### Translate → review → listen
+In **Speak / Podcast**, pick an Indian language. Type or paste **English**, press **🌐 Translate to Telugu**
+(or just Generate — it translates first). The translation appears in an editable box: **review and fix it**,
+then press **Generate** and listen. Edit the text and Generate again until it sounds right.
+`Speaker:` tags and paragraphs are kept. Text already in Telugu/Hindi script is not re-translated.
+
+Translation runs locally: AI4Bharat **IndicTrans2** if you've accepted its terms at
+https://huggingface.co/ai4bharat/indictrans2-en-indic-1B (best quality), otherwise Meta **NLLB-200**
+(no sign-up; non-commercial license).
+
 ## Getting the best quality
 - Quiet room, no echo, mic ~15 cm away. **Clean 30–60 s beats noisy 5 min.**
 - Speak in the style you want back (podcast energy → read energetically).

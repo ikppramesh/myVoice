@@ -248,6 +248,60 @@ def parse_script(text, default_voice):
     return segments
 
 
+# ---------------------------------------------------------------- translation
+
+FLORES = {"te": "tel_Telu", "hi": "hin_Deva", "ta": "tam_Taml", "kn": "kan_Knda", "ml": "mal_Mlym",
+          "mr": "mar_Deva", "bn": "ben_Beng", "gu": "guj_Gujr", "pa": "pan_Guru", "or": "ory_Orya",
+          "as": "asm_Beng"}
+
+
+def needs_translation(text):
+    """True when the text is mostly Latin letters (i.e. English, not already Telugu/Hindi...)."""
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and sum(c.isascii() for c in letters) / len(letters) > 0.5
+
+
+def translate(text, lang):
+    """Translate English text to an Indian language, keeping paragraphs and 'Speaker:' tags.
+
+    Returns (translated_text, model_name).
+    """
+    if lang not in FLORES:
+        raise ValueError(f"Translation is available for Indian languages only, not '{lang}'")
+    if not INDIC_PYTHON.exists():
+        raise RuntimeError("Indian-language tools not installed (.venv-indic missing). See README.")
+    known = {v["id"].lower() for v in list_voices()} | {v["name"].lower() for v in list_voices()}
+
+    # Each line -> (speaker prefix to keep, [sentences to translate])
+    layout, sentences = [], []
+    for line in text.splitlines():
+        prefix, body = "", line.strip()
+        m = re.match(r"^\s*(\[?[A-Za-z0-9_ -]{1,40}\]?\s*:)\s*(.*)$", line)
+        if m and m.group(1).strip("[]: ").lower() in known:
+            prefix, body = m.group(1) + " ", m.group(2)
+        parts = [s for s in re.split(r"(?<=[.!?])\s+", body) if s.strip()] if needs_translation(body) else []
+        layout.append((prefix, body, len(sentences), len(parts)))
+        sentences += parts
+    if not sentences:
+        return text, "none (already translated)"
+
+    work = OUTPUT_DIR / f"_tr_{os.getpid()}_{time.time_ns()}"
+    Path(f"{work}.json").write_text(json.dumps(
+        {"tgt": FLORES[lang], "sentences": sentences, "out": f"{work}.out.json"}, ensure_ascii=False))
+    proc = subprocess.run([str(INDIC_PYTHON), str(ROOT / "translate_worker.py"), f"{work}.json"],
+                          capture_output=True, text=True)
+    Path(f"{work}.json").unlink(missing_ok=True)
+    if proc.returncode != 0:
+        raise RuntimeError("Translation failed:\n" + proc.stderr[-2000:])
+    result = json.loads(Path(f"{work}.out.json").read_text())
+    Path(f"{work}.out.json").unlink()
+
+    lines = []
+    for prefix, body, start, n in layout:
+        lines.append(prefix + (" ".join(result["sentences"][start:start + n]) if n else body))
+    return "\n".join(lines), result["model"]
+
+
 # ---------------------------------------------------------------- synthesis
 
 def _prepare(model, vdir, exaggeration):

@@ -126,14 +126,59 @@ def save_indic(name, lang, audio, transcript):
 
 # ------------------------------------------------------------ speak tab
 
-def generate(text, voice, language, exaggeration, cfg_weight, temperature, seed, progress=gr.Progress()):
+def effective_lang(voice, override):
+    if override:
+        return override
+    v = next((v for v in engine.list_voices() if v["id"] == voice), None)
+    return v["language"] if v else "en"
+
+
+def on_lang_change(voice, override):
+    lang = effective_lang(voice, override)
+    indic = lang in engine.INDIC_LANGS
+    name = engine.INDIC_LANGS.get(lang, "")
+    return (gr.update(visible=indic, label=f"{name} text — review & edit before generating"),
+            gr.update(visible=indic, value=f"🌐 Translate to {name}" if indic else "🌐 Translate"))
+
+
+def do_translate(text, voice, override, progress=gr.Progress()):
+    lang = effective_lang(voice, override)
+    if not text.strip():
+        raise gr.Error("Type the English text first.")
+    progress(0.1, "Translating… (first time downloads the translation model)")
+    try:
+        out, model = engine.translate(text, lang)
+    except Exception as e:
+        raise gr.Error(str(e))
+    note = (f"✅ Translated to {engine.INDIC_LANGS[lang]} with {model}. **Review and fix the text below**, "
+            "then press Generate and listen to the result.")
+    return out, note, text
+
+
+def prepare(text, translated, translated_from, voice, override, progress=gr.Progress()):
+    """Step 1 of Generate: for Indian languages, translate if the English changed since last time."""
     if not voice:
         raise gr.Error("Pick a voice (create one first).")
-    if not text.strip():
+    if not text.strip() and not (translated or "").strip():
         raise gr.Error("Type something to say.")
-    wav, mp3 = engine.speak(text, voice, language=language or None, exaggeration=exaggeration,
-                            cfg_weight=cfg_weight, temperature=temperature,
-                            seed=int(seed) if seed is not None and seed >= 0 else None, progress=progress)
+    lang = effective_lang(voice, override)
+    if (lang in engine.INDIC_LANGS and engine.needs_translation(text)
+            and (not translated.strip() or translated_from != text)):
+        return do_translate(text, voice, override, progress)
+    return translated, gr.update(), translated_from
+
+
+def generate(text, translated, voice, override, exaggeration, cfg_weight, temperature, seed,
+             progress=gr.Progress()):
+    """Step 2 of Generate: speak the reviewed translation (Indian languages) or the original text."""
+    lang = effective_lang(voice, override)
+    to_speak = translated if lang in engine.INDIC_LANGS and translated.strip() else text
+    try:
+        wav, mp3 = engine.speak(to_speak, voice, language=lang, exaggeration=exaggeration,
+                                cfg_weight=cfg_weight, temperature=temperature,
+                                seed=int(seed) if seed is not None and seed >= 0 else None, progress=progress)
+    except Exception as e:
+        raise gr.Error(str(e), duration=None)
     return str(wav), [str(wav), str(mp3)]
 
 
@@ -202,6 +247,9 @@ with gr.Blocks(title="myVoice") as demo:
                                   placeholder="Paste any length of text.\n\nFor multi-voice podcasts, start lines "
                                               "with a saved voice name:\nRamesh: Welcome to the show!\nGuest: Thanks "
                                               "for having me.")
+                tr_note = gr.Markdown()
+                translated = gr.Textbox(lines=10, visible=False, label="Translated text — review & edit")
+                translated_from = gr.State("")
             with gr.Column(scale=2):
                 voice = gr.Dropdown(voice_names(), value=(voice_names() or [None])[0], label="Voice")
                 lang_override = gr.Dropdown([("Use voice's language", "")] + LANG_CHOICES, value="",
@@ -214,8 +262,9 @@ with gr.Blocks(title="myVoice") as demo:
                                 info="Lower = slower, more deliberate delivery")
                 temp = gr.Slider(0.05, 1.5, 0.8, step=0.05, label="Variation (temperature)")
                 seed = gr.Number(42, label="Seed (-1 = random)", precision=0)
+                tr_btn = gr.Button("🌐 Translate", visible=False)
                 go = gr.Button("🔊 Generate", variant="primary")
-        out_audio = gr.Audio(label="Result", interactive=False)
+        out_audio = gr.Audio(label="Result — listen to review your voice", interactive=False)
         out_files = gr.File(label="Download (WAV / MP3)")
 
     with gr.Tab("My voices"):
@@ -234,7 +283,12 @@ with gr.Blocks(title="myVoice") as demo:
     indic_lang.change(indic_script, indic_lang, [indic_text_md, indic_transcript])
     indic_btn.click(save_indic, [name, indic_lang, indic_audio, indic_transcript], [indic_audio, indic_info])
     name.change(indic_status, name, indic_info)
-    go.click(generate, [text, voice, lang_override, exaggeration, cfg, temp, seed], [out_audio, out_files])
+    lang_override.change(on_lang_change, [voice, lang_override], [translated, tr_btn])
+    voice.change(on_lang_change, [voice, lang_override], [translated, tr_btn])
+    tr_btn.click(do_translate, [text, voice, lang_override], [translated, tr_note, translated_from])
+    go.click(prepare, [text, translated, translated_from, voice, lang_override],
+             [translated, tr_note, translated_from]).success(
+        generate, [text, translated, voice, lang_override, exaggeration, cfg, temp, seed], [out_audio, out_files])
     del_btn.click(remove, del_voice, [del_voice, table]).then(
         lambda: gr.update(choices=voice_names()), None, voice)
 
