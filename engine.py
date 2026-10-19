@@ -174,7 +174,10 @@ def _indic_reference(vdir, lang):
     clip = vdir / "reference_short.wav"
     if not clip.exists() or clip.stat().st_mtime < (vdir / "reference.wav").stat().st_mtime:
         _run_ffmpeg(["-i", str(vdir / "reference.wav"), "-t", "12", str(clip)])
-    return clip, ""  # empty transcript -> IndicF5 transcribes it with Whisper
+        clip.with_suffix(".txt").unlink(missing_ok=True)
+    transcript = clip.with_suffix(".txt")
+    # Empty transcript -> the worker transcribes it with Whisper once and reports it back (REFTEXT).
+    return clip, transcript.read_text() if transcript.exists() else ""
 
 
 # ---------------------------------------------------------------- models
@@ -338,12 +341,22 @@ def _speak_indic(chunks, vdir, lang, tick):
     work = OUTPUT_DIR / f"_indic_{os.getpid()}_{time.time_ns()}"
     job = {"ref_audio": str(ref_audio), "ref_text": ref_text, "chunks": chunks, "out": f"{work}.wav"}
     Path(f"{work}.json").write_text(json.dumps(job, ensure_ascii=False))
-    proc = subprocess.Popen([str(INDIC_PYTHON), str(ROOT / "indic_worker.py"), f"{work}.json"],
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    for line in proc.stdout:
-        if line.startswith("PROGRESS") and int(line.split()[1]) < len(chunks):
-            tick()
-    err = proc.stderr.read()
+    # stderr goes to a file: a chatty worker filling an unread stderr pipe would deadlock us.
+    with open(f"{work}.log", "w+") as log:
+        proc = subprocess.Popen([str(INDIC_PYTHON), str(ROOT / "indic_worker.py"), f"{work}.json"],
+                                stdout=subprocess.PIPE, stderr=log, text=True)
+        seen = set()
+        for line in proc.stdout:
+            parts = line.split()
+            if parts[:1] == ["REFTEXT"]:
+                Path(ref_audio).with_suffix(".txt").write_text(json.loads(line[len("REFTEXT "):]))
+            elif parts[:1] == ["PROGRESS"] and int(parts[1]) < len(chunks) and parts[1] not in seen:
+                seen.add(parts[1])
+                tick()
+        proc.wait()
+        log.seek(0)
+        err = log.read()
+    Path(f"{work}.log").unlink(missing_ok=True)
     Path(f"{work}.json").unlink(missing_ok=True)
     if proc.wait() != 0:
         if "gated repo" in err or "restricted" in err:

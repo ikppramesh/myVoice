@@ -1,6 +1,8 @@
 # Indian-language engine (IndicF5). Install into a separate venv:
 #   uv venv --python 3.11 .venv-indic && uv pip install --python .venv-indic/bin/python -r requirements-indic.txt
 git+https://github.com/ai4bharat/IndicF5.git
+torch==2.6.0       # newer torchaudio needs torchcodec to load audio
+torchaudio==2.6.0
 soundfile
 setuptools<81
 transformers<5     # IndicF5 remote model code predates transformers 5
