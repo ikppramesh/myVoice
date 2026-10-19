@@ -25,7 +25,8 @@ from safetensors.torch import load_file
 REPO = "ai4bharat/IndicF5"
 SR = 24000
 # MPS was ~2x faster than CPU for IndicF5 on an M3 Pro; override with MYVOICE_INDIC_DEVICE=cpu
-DEVICE = os.environ.get("MYVOICE_INDIC_DEVICE") or ("mps" if torch.backends.mps.is_available() else "cpu")
+DEVICE = os.environ.get("MYVOICE_INDIC_DEVICE") or (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def quiet(*_args, **_kwargs):

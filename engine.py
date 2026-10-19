@@ -19,10 +19,29 @@ import torch
 import torchaudio
 
 ROOT = Path(__file__).parent
-VOICES_DIR = ROOT / "voices"
-OUTPUT_DIR = ROOT / "outputs"
-VOICES_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
+DATA_DIR = Path(os.environ.get("MYVOICE_DATA", ROOT))
+VOICES_DIR = DATA_DIR / "voices"
+OUTPUT_DIR = DATA_DIR / "outputs"
+VOICES_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Optional: mirror voices/ to a private Hugging Face dataset (used on the hosted Space, whose disk is wiped
+# on restart). Set MYVOICE_VOICES_REPO=user/myvoice-voices and HF_TOKEN.
+VOICES_REPO = os.environ.get("MYVOICE_VOICES_REPO")
+
+
+def pull_voices():
+    if VOICES_REPO:
+        from huggingface_hub import snapshot_download
+        snapshot_download(VOICES_REPO, repo_type="dataset", local_dir=VOICES_DIR)
+
+
+def push_voices():
+    if VOICES_REPO:
+        from huggingface_hub import HfApi
+        HfApi().upload_folder(repo_id=VOICES_REPO, repo_type="dataset", folder_path=VOICES_DIR,
+                              ignore_patterns=[".cache/*", "conds_*.pt"], delete_patterns="*",
+                              commit_message="Update voices")
 
 # On Apple Silicon the CPU is steadier than MPS for this model (MPS speed varies a lot run to run).
 # Override with MYVOICE_DEVICE=mps (or cuda on an NVIDIA machine).
@@ -31,7 +50,7 @@ MAX_REFERENCE_SECONDS = 30
 MAX_CHUNK_CHARS = 280
 
 # Indian languages are generated with IndicF5 (AI4Bharat), installed in its own venv.
-INDIC_PYTHON = ROOT / ".venv-indic" / "bin" / "python"
+INDIC_PYTHON = Path(os.environ.get("MYVOICE_INDIC_PYTHON", ROOT / ".venv-indic" / "bin" / "python"))
 INDIC_LANGS = {
     "te": "Telugu", "hi": "Hindi", "ta": "Tamil", "kn": "Kannada", "ml": "Malayalam", "mr": "Marathi",
     "bn": "Bengali", "gu": "Gujarati", "pa": "Punjabi", "or": "Odia", "as": "Assamese",
@@ -118,6 +137,7 @@ def save_voice(name, sample_paths, labels=None, description="", language="en"):
     (vdir / "voice.json").write_text(json.dumps(meta, indent=2))
     for old in vdir.glob("conds_*.pt"):  # invalidate cached voice embeddings
         old.unlink()
+    push_voices()
     return vdir
 
 
@@ -138,6 +158,7 @@ def voice_dir(name) -> Path:
 
 def delete_voice(name):
     shutil.rmtree(voice_dir(name))
+    push_voices()
 
 
 def save_indic_reference(name, lang, audio_path, transcript):
@@ -157,6 +178,7 @@ def save_indic_reference(name, lang, audio_path, transcript):
                          "(read just the one sentence) so it matches the transcript")
     tmp.rename(idir / f"{lang}.wav")
     (idir / f"{lang}.txt").write_text(transcript.strip())
+    push_voices()
     return idir / f"{lang}.wav"
 
 

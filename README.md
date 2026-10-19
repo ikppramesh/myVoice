@@ -64,3 +64,35 @@ https://huggingface.co/ai4bharat/indictrans2-en-indic-1B (best quality), otherwi
 - `engine.py` core · `app.py` web UI · `say.py` CLI · `indic_worker.py` IndicF5 runner
 
 Generated audio carries Chatterbox's built-in inaudible watermark (Perth). Only clone voices you own or have permission to use.
+
+## Online: Vercel site + Hugging Face Space
+Vercel can't run the voice models (GBs of weights, minutes per job), so:
+
+```
+Browser ──► Vercel (web/, Next.js, password login) ──API key──► HF Space (server.py: engine + studio UI)
+   ▲                                                                   │
+   └──────────── signed, expiring MP3 link (served by the Space) ◄─────┘
+```
+Voices are stored in a **private HF dataset** (`<user>/myvoice-voices`), synced by the Space.
+
+### 1. Engine on Hugging Face
+```bash
+.venv/bin/python deploy/push_space.py --upload-voices
+```
+Creates the Space (Docker) + private voices dataset, sets secrets, uploads code. Generated
+`MYVOICE_API_KEY` / `MYVOICE_UI_PASSWORD` are saved in `deploy/.secrets.env` (git-ignored).
+Free CPU works but is slow; for speed pick a GPU (e.g. Nvidia T4 small) in Space → Settings → Hardware
+and set a sleep time so you only pay while it's in use.
+Studio (record/create voices): `https://<user>-myvoice.hf.space` — user `admin`, password from the secrets file.
+
+### 2. Website on Vercel
+Project → Settings → General → **Root Directory = `web`**. Environment variables:
+
+| Name | Value |
+|---|---|
+| `SPACE_URL` | `https://<user>-myvoice.hf.space` |
+| `MYVOICE_API_KEY` | from `deploy/.secrets.env` |
+| `SITE_PASSWORD` | the password you'll type to use the site |
+| `SESSION_SECRET` | any long random string |
+
+Redeploy. Local dev: `cd web && SPACE_URL=http://localhost:7860 ... npx next dev` with `uvicorn server:app`.
