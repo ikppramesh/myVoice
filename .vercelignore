@@ -14,3 +14,4 @@
 /.venv-indic/
 /.bin/
 __pycache__/
+/.vercel/
