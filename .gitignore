@@ -2,8 +2,8 @@
 __pycache__/
 .DS_Store
 # Personal voice data and generated audio: never commit (repo is public; recordings allow cloning your voice)
-voices/
-outputs/
+/voices/
+/outputs/
 *.wav
 *.mp3
 *.m4a
