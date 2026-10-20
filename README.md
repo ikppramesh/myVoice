@@ -61,7 +61,7 @@ https://huggingface.co/ai4bharat/indictrans2-en-indic-1B (best quality), otherwi
 ## Files
 - `voices/<name>/` – your samples, cleaned `reference.wav`, metadata
 - `outputs/` – generated audio
-- `engine.py` core · `app.py` web UI · `say.py` CLI · `indic_worker.py` IndicF5 runner
+- `engine.py` core · `studio.py` studio UI · `server.py` hosted API · `app/` Next.js site (Vercel) · `say.py` CLI · `indic_worker.py` IndicF5 runner
 
 Generated audio carries Chatterbox's built-in inaudible watermark (Perth). Only clone voices you own or have permission to use.
 
@@ -69,7 +69,7 @@ Generated audio carries Chatterbox's built-in inaudible watermark (Perth). Only 
 Vercel can't run the voice models (GBs of weights, minutes per job), so:
 
 ```
-Browser ──► Vercel (web/, Next.js, password login) ──API key──► HF Space (server.py: engine + studio UI)
+Browser ──► Vercel (app/, Next.js, password login) ──API key──► HF Space (server.py: engine + studio UI)
    ▲                                                                   │
    └──────────── signed, expiring MP3 link (served by the Space) ◄─────┘
 ```
@@ -86,7 +86,8 @@ and set a sleep time so you only pay while it's in use.
 Studio (record/create voices): `https://<user>-myvoice.hf.space` — user `admin`, password from the secrets file.
 
 ### 2. Website on Vercel
-Project → Settings → General → **Root Directory = `web`**. Environment variables:
+The site lives at the repo root (`app/`, `lib/`, `middleware.ts`); `.vercelignore` keeps the Python
+engine out of the Vercel build. In the Vercel project add these environment variables:
 
 | Name | Value |
 |---|---|
@@ -95,4 +96,4 @@ Project → Settings → General → **Root Directory = `web`**. Environment var
 | `SITE_PASSWORD` | the password you'll type to use the site |
 | `SESSION_SECRET` | any long random string |
 
-Redeploy. Local dev: `cd web && SPACE_URL=http://localhost:7860 ... npx next dev` with `uvicorn server:app`.
+Redeploy. Local dev: `SPACE_URL=http://localhost:7860 ... npx next dev` with `uvicorn server:app`.

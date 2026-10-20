@@ -9,6 +9,6 @@ outputs/
 *.m4a
 .venv-indic/
 deploy/.secrets.env
-web/node_modules/
-web/.next/
-web/.env*.local
+node_modules/
+.next/
+.env*.local

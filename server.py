@@ -36,7 +36,7 @@ LINK_TTL = 6 * 3600
 MAX_TEXT_CHARS = 20000
 
 engine.pull_voices()
-import app as studio  # noqa: E402  (after pull so the UI lists synced voices)
+import studio  # noqa: E402  (after pull so the UI lists synced voices)
 
 jobs: dict[str, dict] = {}
 work: "queue.Queue[str]" = queue.Queue()

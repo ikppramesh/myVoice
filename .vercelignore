@@ -1,0 +1,13 @@
+# Vercel only builds the Next.js site (app/, lib/, middleware.ts). The Python voice engine runs on the
+# Hugging Face Space; without this, Vercel tries to bundle torch + models (~6 GB) as a Python function.
+*.py
+requirements*.txt
+Dockerfile
+run.sh
+say
+deploy/
+voices/
+outputs/
+.venv/
+.venv-indic/
+__pycache__/

@@ -19,7 +19,7 @@ from huggingface_hub import HfApi, get_token
 
 ROOT = Path(__file__).resolve().parent.parent
 SECRETS = ROOT / "deploy" / ".secrets.env"
-CODE = ["Dockerfile", "server.py", "app.py", "engine.py", "indic_worker.py", "translate_worker.py",
+CODE = ["Dockerfile", "server.py", "studio.py", "engine.py", "indic_worker.py", "translate_worker.py",
         "requirements.txt", "requirements-indic.txt"]
 
 
