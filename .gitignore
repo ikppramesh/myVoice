@@ -9,6 +9,7 @@ __pycache__/
 *.m4a
 .venv-indic/
 deploy/.secrets.env
+deploy/.tunnel_url
 node_modules/
 .next/
 .env*.local
