@@ -6,6 +6,8 @@ Environment:
   MYVOICE_API_KEY       required; the Vercel site sends it as the X-API-Key header
   MYVOICE_UI_PASSWORD   password for the studio UI (username "admin"); UI is open if unset (local use)
   MYVOICE_VOICES_REPO   optional private HF dataset that stores voices (see engine.py)
+  MYVOICE_UI_LOCAL_ONLY =1: requests arriving through a Cloudflare tunnel may only use /api/v1/*; the
+                        studio UI stays reachable from this machine only (used by run_online.sh)
 
 API (all JSON, X-API-Key required except /audio which uses a signed link):
   GET  /api/v1/voices                     -> [{id, name, language, labels, indic_samples}]
@@ -23,15 +25,16 @@ import time
 import uuid
 
 import gradio as gr
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
 import engine
 
 API_KEY = os.environ.get("MYVOICE_API_KEY", "")
 UI_PASSWORD = os.environ.get("MYVOICE_UI_PASSWORD")
+UI_LOCAL_ONLY = os.environ.get("MYVOICE_UI_LOCAL_ONLY") == "1"
 LINK_TTL = 6 * 3600
 MAX_TEXT_CHARS = 20000
 
@@ -100,6 +103,14 @@ threading.Thread(target=worker, daemon=True).start()
 
 app = FastAPI(title="myVoice")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=[])
+
+
+@app.middleware("http")
+async def tunnel_guard(request: Request, call_next):
+    # Cloudflare adds Cf-Connecting-Ip to tunnelled requests; local browser requests don't have it.
+    if UI_LOCAL_ONLY and "cf-connecting-ip" in request.headers and not request.url.path.startswith("/api/v1/"):
+        return PlainTextResponse("Not found", status_code=404)
+    return await call_next(request)
 
 
 @app.get("/api/v1/health")

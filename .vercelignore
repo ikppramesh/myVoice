@@ -11,3 +11,5 @@ outputs/
 .venv/
 .venv-indic/
 __pycache__/
+run_online.sh
+.bin/

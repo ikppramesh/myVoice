@@ -65,7 +65,17 @@ https://huggingface.co/ai4bharat/indictrans2-en-indic-1B (best quality), otherwi
 
 Generated audio carries Chatterbox's built-in inaudible watermark (Perth). Only clone voices you own or have permission to use.
 
-## Online: Vercel site + Hugging Face Space
+## Online: Vercel site + engine on this Mac (free)
+```bash
+./run_online.sh
+```
+Starts the engine and a Cloudflare quick tunnel and prints `SPACE_URL for Vercel: https://….trycloudflare.com`.
+In Vercel set `SPACE_URL` to that URL and `MYVOICE_API_KEY` to the value in `deploy/.secrets.env`
+(optional `STUDIO_URL=http://127.0.0.1:7860` for the "Record / manage voices" link), then redeploy.
+Only the key-protected API goes through the tunnel; the studio UI answers on this Mac only.
+The quick-tunnel URL changes each time the script restarts, and the site works only while the Mac is on.
+
+## Online: Vercel site + Hugging Face Space (needs HF PRO)
 Vercel can't run the voice models (GBs of weights, minutes per job), so:
 
 ```

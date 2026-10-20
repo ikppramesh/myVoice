@@ -12,3 +12,4 @@ deploy/.secrets.env
 node_modules/
 .next/
 .env*.local
+.bin/
