@@ -1,4 +1,8 @@
+<img src="app/icon.svg" alt="myVoice" width="72" />
+
 # myVoice — your own voice, cloned locally
+
+**🎙️ Live:** [myvoice-ir.vercel.app](https://myvoice-ir.vercel.app/)
 
 Local "Instant Voice Clone" (like ElevenLabs) using the open-source **Chatterbox** model.
 Everything runs on this Mac (Apple GPU / MPS). No account, no upload, no per-character cost.
