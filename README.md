@@ -69,7 +69,7 @@ Generated audio carries Chatterbox's built-in inaudible watermark (Perth). Only 
 Vercel can't run the voice models (GBs of weights, minutes per job), so:
 
 ```
-Browser ──► Vercel (app/, Next.js, password login) ──API key──► HF Space (server.py: engine + studio UI)
+Browser ──► Vercel (app/, Next.js, public page) ──API key──► HF Space (server.py: engine + studio UI)
    ▲                                                                   │
    └──────────── signed, expiring MP3 link (served by the Space) ◄─────┘
 ```
@@ -93,7 +93,5 @@ engine out of the Vercel build. In the Vercel project add these environment vari
 |---|---|
 | `SPACE_URL` | `https://<user>-myvoice.hf.space` |
 | `MYVOICE_API_KEY` | from `deploy/.secrets.env` |
-| `SITE_PASSWORD` | the password you'll type to use the site |
-| `SESSION_SECRET` | any long random string |
 
-Redeploy. Local dev: `SPACE_URL=http://localhost:7860 ... npx next dev` with `uvicorn server:app`.
+Redeploy. The site has no login: anyone with its URL can generate audio in your saved voices. Local dev: `SPACE_URL=http://localhost:7860 ... npx next dev` with `uvicorn server:app`.

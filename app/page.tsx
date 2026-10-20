@@ -8,7 +8,6 @@ type Job = { status: string; progress: number; message: string; result: { text?:
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401) window.location.href = "/login";
   if (!res.ok) throw new Error(body.detail || `Request failed (${res.status})`);
   return body as T;
 }
@@ -97,19 +96,11 @@ export default function Home() {
     setAudio(r?.audio || "");
   });
 
-  async function logout() {
-    await fetch("/api/logout", { method: "POST" });
-    window.location.href = "/login";
-  }
-
   return (
     <main>
       <header>
         <h1>🎙️ myVoice</h1>
-        <div className="row" style={{ flex: "0 0 auto", alignItems: "center" }}>
-          {studioUrl && <a href={studioUrl} target="_blank" rel="noreferrer">Record / manage voices ↗</a>}
-          <button onClick={logout}>Sign out</button>
-        </div>
+        {studioUrl && <a href={studioUrl} target="_blank" rel="noreferrer">Record / manage voices ↗</a>}
       </header>
 
       {error && (
