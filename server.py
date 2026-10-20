@@ -15,6 +15,10 @@ API (all JSON, X-API-Key required except /audio which uses a signed link):
   POST /api/v1/jobs {type:"speak", text, voice, lang, exaggeration?, cfg_weight?, temperature?, seed?}
   GET  /api/v1/jobs/{id}                  -> {status, progress, message, result}
   GET  /api/v1/audio/{file}?exp=..&sig=.. -> mp3 (link returned in a finished speak job)
+
+Nothing is kept after use: a job's text is dropped when it finishes, its record soon after the result is
+collected, and the mp3 is deleted as soon as it has been downloaded (the link works once). Anything never
+collected — and temp files from failed jobs — is swept from outputs/ after LINK_TTL.
 """
 import hashlib
 import hmac
@@ -29,13 +33,15 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 import engine
 
 API_KEY = os.environ.get("MYVOICE_API_KEY", "")
 UI_PASSWORD = os.environ.get("MYVOICE_UI_PASSWORD")
 UI_LOCAL_ONLY = os.environ.get("MYVOICE_UI_LOCAL_ONLY") == "1"
-LINK_TTL = 6 * 3600
+LINK_TTL = 3600
+COLLECTED_GRACE = 60  # keep a finished job briefly after its result is read, in case the poll is retried
 MAX_TEXT_CHARS = 20000
 
 engine.pull_voices()
@@ -88,6 +94,15 @@ def run_job(job_id: str):
         job.update(status="done", progress=1.0, message="Done")
     except Exception as e:  # report to the caller instead of killing the worker
         job.update(status="error", message=str(e))
+    finally:
+        job["req"] = None  # the submitted text isn't needed any more
+
+
+def purge_jobs():
+    now = time.time()
+    for jid in [j for j, v in list(jobs.items())
+                if now - v["created"] > LINK_TTL or now - v.get("collected", now) > COLLECTED_GRACE]:
+        jobs.pop(jid, None)
 
 
 def worker():
@@ -99,7 +114,15 @@ def worker():
             work.task_done()
 
 
+def sweeper():
+    while True:
+        purge_jobs()
+        engine.sweep_outputs(LINK_TTL)
+        time.sleep(600)
+
+
 threading.Thread(target=worker, daemon=True).start()
+threading.Thread(target=sweeper, daemon=True).start()
 
 app = FastAPI(title="myVoice")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=[])
@@ -142,9 +165,7 @@ def create_job(req: Job):
             raise HTTPException(404, str(e))
     if req.type == "translate" and req.lang not in engine.FLORES:
         raise HTTPException(400, "translation is only for Indian languages")
-    # drop finished jobs older than a day
-    for jid in [j for j, v in jobs.items() if time.time() - v["created"] > 86400]:
-        jobs.pop(jid, None)
+    purge_jobs()
     job_id = uuid.uuid4().hex
     jobs[job_id] = {"req": req, "status": "queued", "progress": 0.0, "message": "Waiting in queue…",
                     "result": None, "created": time.time()}
@@ -157,6 +178,8 @@ def get_job(job_id: str):
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(404, "Unknown job")
+    if job["status"] in ("done", "error"):
+        job.setdefault("collected", time.time())
     return {k: job[k] for k in ("status", "progress", "message", "result")}
 
 
@@ -167,7 +190,9 @@ def audio(name: str, exp: int, sig: str):
     path = engine.OUTPUT_DIR / name
     if path.parent != engine.OUTPUT_DIR or path.suffix != ".mp3" or not path.exists():
         raise HTTPException(404, "Not found")
-    return FileResponse(path, media_type="audio/mpeg", filename=name)
+    # One-time link: the file is deleted as soon as it has been sent.
+    return FileResponse(path, media_type="audio/mpeg", filename=name,
+                        background=BackgroundTask(path.unlink, missing_ok=True))
 
 
 app = gr.mount_gradio_app(app, studio.demo.queue(), path="/",

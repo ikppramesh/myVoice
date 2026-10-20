@@ -87,14 +87,20 @@ export default function Home() {
       if (looksEnglish(text) && (!translated.trim() || translatedFrom !== text)) toSpeak = await translate();
       if (!toSpeak.trim()) toSpeak = text;
     }
-    setAudio("");
+    showAudio("");
     setBusy("Generating audio…");
     setProgress(0);
     const r = await runJob(
       { type: "speak", text: toSpeak, voice, lang, exaggeration: expr, cfg_weight: pace },
       (j) => { setProgress(j.progress); setBusy(j.message || "Generating audio…"); });
-    setAudio(r?.audio || "");
+    if (!r?.audio) return;
+    // The engine deletes the mp3 once it has been sent, so fetch it once and play/download from memory.
+    const res = await fetch(r.audio);
+    if (!res.ok) throw new Error("The audio link expired — generate again.");
+    showAudio(URL.createObjectURL(await res.blob()));
   });
+
+  const showAudio = (url: string) => setAudio((old) => { if (old) URL.revokeObjectURL(old); return url; });
 
   return (
     <main>
@@ -185,7 +191,7 @@ export default function Home() {
         <section className="card">
           <p className="ok">Listen and review your voice:</p>
           <audio controls src={audio} />
-          <div className="actions"><a href={audio} download>⬇ Download MP3</a></div>
+          <div className="actions"><a href={audio} download="myVoice.mp3">⬇ Download MP3</a></div>
         </section>
       )}
     </main>

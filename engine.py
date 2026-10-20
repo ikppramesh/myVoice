@@ -25,6 +25,17 @@ OUTPUT_DIR = DATA_DIR / "outputs"
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
+def sweep_outputs(max_age):
+    """Delete generated audio and leftover temp files in outputs/ older than max_age seconds."""
+    cutoff = time.time() - max_age
+    for p in OUTPUT_DIR.iterdir():
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                p.unlink()
+        except OSError:
+            pass
+
 # Optional: mirror voices/ to a private Hugging Face dataset (used on the hosted Space, whose disk is wiped
 # on restart). Set MYVOICE_VOICES_REPO=user/myvoice-voices and HF_TOKEN.
 VOICES_REPO = os.environ.get("MYVOICE_VOICES_REPO")

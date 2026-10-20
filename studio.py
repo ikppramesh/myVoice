@@ -191,7 +191,8 @@ def remove(voice):
 
 # ------------------------------------------------------------ UI
 
-with gr.Blocks(title="myVoice") as demo:
+# Clear Gradio's copies of uploads/downloads every 10 min once they're an hour old.
+with gr.Blocks(title="myVoice", delete_cache=(600, 3600)) as demo:
     gr.Markdown(f"# 🎙️ myVoice — local voice cloning\nRuns 100% on this machine (`{engine.DEVICE}`). "
                 "Nothing is uploaded anywhere.")
     samples = gr.State([])
