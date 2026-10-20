@@ -1,32 +1,58 @@
-// Server-side helper: call the myVoice engine on the Hugging Face Space with the API key.
-export const SPACE_URL = (process.env.SPACE_URL || "").replace(/\/$/, "");
+// Server-side helper: call the myVoice engine (on the Mac, behind a Cloudflare tunnel) with the API key.
+import { get } from "@vercel/edge-config";
+
+// The tunnel URL changes whenever the tunnel restarts; the engine publishes the current one to Edge Config
+// (deploy/publish_url.py), so it is looked up at request time rather than baked in at deploy time.
+// SPACE_URL is only a fallback for setups without Edge Config.
+let cached: { url: string; at: number } | null = null;
+const CACHE_MS = 10_000;
+
+export async function engineUrl(fresh = false): Promise<string> {
+  if (!fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.url;
+  let url = "";
+  if (process.env.EDGE_CONFIG) {
+    try {
+      url = (await get<string>("engineUrl")) || "";
+    } catch {
+      url = cached?.url || "";
+    }
+  }
+  url = (url || process.env.SPACE_URL || "").replace(/\/$/, "");
+  cached = { url, at: Date.now() };
+  return url;
+}
 
 export async function spaceFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  if (!SPACE_URL || !process.env.MYVOICE_API_KEY) {
-    return Response.json({ detail: "SPACE_URL / MYVOICE_API_KEY not configured on Vercel" }, { status: 500 });
+  if (!process.env.MYVOICE_API_KEY) {
+    return Response.json({ detail: "MYVOICE_API_KEY is not configured on Vercel" }, { status: 500 });
   }
-  // The tunnel drops the odd connection; retry reads once before reporting the engine as unreachable.
-  // (Not POSTs: the first attempt may have reached the engine, and a retry would start a duplicate job.)
-  const retries = (init.method || "GET").toUpperCase() === "GET" ? 1 : 0;
+  // Retry reads with a freshly looked-up URL (the tunnel may have just moved). Not POSTs: the first
+  // attempt may have reached the engine, and a retry would start a duplicate job.
+  const retries = (init.method || "GET").toUpperCase() === "GET" ? 2 : 0;
   for (let attempt = 0; ; attempt++) {
+    const base = await engineUrl(attempt > 0);
+    if (!base) {
+      return Response.json({ detail: "The voice engine is offline (no address published yet)." }, { status: 503 });
+    }
     try {
-      const res = await fetch(`${SPACE_URL}${path}`, {
+      const res = await fetch(`${base}${path}`, {
         ...init,
         cache: "no-store",
         headers: { ...init.headers, "X-API-Key": process.env.MYVOICE_API_KEY, "Content-Type": "application/json" },
       });
-      // A sleeping/starting engine (or a dead tunnel) answers with HTML; give the UI something readable.
+      // A dead or starting tunnel answers with an HTML error page.
       if (!(res.headers.get("content-type") || "").includes("application/json")) {
-        if (attempt < retries && res.status >= 500) { await sleep(1500); continue; }
-        return Response.json({ detail: "The voice engine is starting up — try again in a minute." }, { status: 503 });
+        if (attempt < retries) { await sleep(1500); continue; }
+        return Response.json(
+          { detail: "The voice engine is offline — is the Mac on and awake? It reconnects automatically." },
+          { status: 503 });
       }
       return new Response(res.body, { status: res.status, headers: { "Content-Type": "application/json" } });
     } catch {
       if (attempt < retries) { await sleep(1500); continue; }
       return Response.json(
-        { detail: "Can't reach the voice engine — it may be restarting. Try again in a minute." },
-        { status: 502 },
-      );
+        { detail: "The voice engine is offline — is the Mac on and awake? It reconnects automatically." },
+        { status: 502 });
     }
   }
 }
