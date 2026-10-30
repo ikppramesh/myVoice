@@ -8,13 +8,13 @@
   },
   "dependencies": {
     "@vercel/edge-config": "^1.5.1",
-    "next": "^15.5.28",
+    "next": "^16.4.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }
