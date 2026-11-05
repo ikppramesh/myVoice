@@ -29,6 +29,21 @@ const looksEnglish = (t: string) => {
   return letters.length > 0 && letters.filter((c) => c.charCodeAt(0) < 128).length / letters.length > 0.5;
 };
 
+const FAQ = [
+  ["Is my voice uploaded anywhere?", "No. Voice cloning runs on your own computer; samples stay on your machine and nothing is billed per character."],
+  ["How much audio do I need to record?", "A few short clips (about a minute in total) read clearly in a quiet room give a good clone. Add more clips for better results."],
+  ["Which languages are supported?", "English and many other languages via Chatterbox, plus Telugu, Hindi, Tamil, Kannada, Malayalam, Marathi, Bengali, Gujarati, Punjabi, Odia and Assamese via IndicF5."],
+  ["Why is nothing happening when I press Generate?", "This page talks to the engine running on your computer. Make sure it is started (./run_online.sh) and press Retry if you see a connection error. Long scripts can take a few minutes."],
+  ["Can I make a podcast with several voices?", "Yes. Start each line with a saved voice name, for example “Ramesh: Welcome to the show!”, and each speaker is voiced separately."],
+  ["Can I clone someone else's voice?", "Only with their explicit consent. The studio asks you to confirm consent before saving a voice."],
+];
+
+const faqLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
+};
+
 export default function Home() {
   const [voices, setVoices] = useState<Voice[]>([]);
   const [langs, setLangs] = useState<Lang[]>([]);
@@ -109,6 +124,10 @@ export default function Home() {
         {studioUrl && <a href={studioUrl} target="_blank" rel="noreferrer">Record / manage voices ↗</a>}
       </header>
 
+      <p className="muted intro">
+        Clone your voice once, then turn any text into natural speech — in English or an Indian language. Private and free.
+      </p>
+
       {error && (
         <div className="card error">
           {error} <button onClick={load} style={{ marginLeft: 8 }}>Retry</button>
@@ -187,13 +206,41 @@ export default function Home() {
         )}
       </section>
 
-      {audio && (
-        <section className="card">
-          <p className="ok">Listen and review your voice:</p>
-          <audio controls src={audio} />
-          <div className="actions"><a href={audio} download="myVoice.mp3">⬇ Download MP3</a></div>
-        </section>
-      )}
+      <section className="card" aria-live="polite">
+        <h2>Your audio</h2>
+        {audio ? (
+          <>
+            <p className="ok">Ready — press play to review your voice:</p>
+            <audio controls src={audio} aria-label="Generated speech in your voice" />
+            <div className="actions"><a href={audio} download="myVoice.mp3">⬇ Download MP3</a></div>
+          </>
+        ) : (
+          <p className="muted">
+            Pick a voice, paste some text and press Generate. Your result appears here with a player and download link.
+          </p>
+        )}
+      </section>
+
+      <section className="card" aria-labelledby="setup">
+        <h2 id="setup">Get started in 4 steps</h2>
+        <ol className="steps">
+          <li><strong>Start the engine.</strong> Run <code>./run.sh</code> (or <code>./run_online.sh</code> to use this page).</li>
+          <li><strong>Create your voice.</strong> Read the on-screen script into the mic in the studio and save it with consent ticked.</li>
+          <li><strong>Add text.</strong> Paste any length of text or a multi-voice script, then choose a language.</li>
+          <li><strong>Generate &amp; download.</strong> Listen to the result and download it as MP3.</li>
+        </ol>
+      </section>
+
+      <section className="card" aria-labelledby="faq">
+        <h2 id="faq">FAQ</h2>
+        {FAQ.map(([q, a]) => (
+          <details key={q} className="faq">
+            <summary>{q}</summary>
+            <p>{a}</p>
+          </details>
+        ))}
+      </section>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }} />
     </main>
   );
 }

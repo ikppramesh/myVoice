@@ -7,6 +7,8 @@
 Local "Instant Voice Clone" (like ElevenLabs) using the open-source **Chatterbox** model.
 Everything runs on this Mac (Apple GPU / MPS). No account, no upload, no per-character cost.
 
+The web page also has a clear audio player, a 4-step setup guide and an FAQ (with FAQ structured data for search).
+
 ## Start
 ```bash
 ./run.sh            # opens http://127.0.0.1:7860
