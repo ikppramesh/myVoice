@@ -6,7 +6,8 @@ const csp = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "media-src 'self' blob:",
-  "connect-src 'self'",
+  // The page fetches the finished mp3 straight from the engine (see app/page.tsx), so allow its hosts.
+  "connect-src 'self' https://*.trycloudflare.com https://*.hf.space",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
